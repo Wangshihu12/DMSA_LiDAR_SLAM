@@ -35,7 +35,7 @@ public:
 
     // state
     bool submapIsInitialized = false;   // 子地图是否初始化
-    bool recievedImuData = false;       // 是否接收 IMU 数据
+    bool recievedImuData = false;       // 是否接收到过 IMU 数据
     bool timeInitialized = false;
     double t0 = -1.0;
     chrono::time_point<std::chrono::system_clock> t0_system;
@@ -46,16 +46,16 @@ public:
     MapManagement KeyframeMap;      // 地图管理
 
     Config config;
-    DmsaOptimSettings optimSettingsSlidingWindow;
-    DmsaOptimSettings optimSettingsMap;
+    DmsaOptimSettings optimSettingsSlidingWindow;   // 滑动窗口优化的设置
+    DmsaOptimSettings optimSettingsMap;             // 地图优化的设置
 
     DmsaOptimizer<PointStampId> slidingWindowOptimizer;
     DmsaOptimizer<PointNormal> keyframeMapOptimizer;
 
     PointCloud<PointStampId>::Ptr staticPoints;
 
-    int maxOverlapKeyId = 0;
-    float overlapRatio = 0.0f;
+    int maxOverlapKeyId = 0;    // 最大重叠关键帧 ID
+    float overlapRatio = 0.0f;  // 重叠比例
 
     OutputManagement Output;
 
@@ -83,19 +83,19 @@ public:
 
     void initConfig()
     {
-        optimSettingsSlidingWindow.num_iter = config.num_iter_sliding_window_optim;
-        optimSettingsSlidingWindow.min_num_points_per_set = config.min_num_points_gauss;
-        optimSettingsSlidingWindow.decay_rate = config.decay_rate_sw;
+        optimSettingsSlidingWindow.num_iter = config.num_iter_sliding_window_optim;         // 滑动窗口优化迭代次数
+        optimSettingsSlidingWindow.min_num_points_per_set = config.min_num_points_gauss;    // 最小点数阈值
+        optimSettingsSlidingWindow.decay_rate = config.decay_rate_sw;                       // 衰减率
 
-        optimSettingsMap.min_num_points_per_set = config.min_num_points_gauss;
-        optimSettingsMap.step_length_optim = config.alpha_keyframe_optim;
-        optimSettingsMap.epsilon = config.epsilon_keyframe_opt;
+        optimSettingsMap.min_num_points_per_set = config.min_num_points_gauss;  // 最小点数阈值
+        optimSettingsMap.step_length_optim = config.alpha_keyframe_optim;       // 步长
+        optimSettingsMap.epsilon = config.epsilon_keyframe_opt;                 // 优化的精度阈值
 
-        optimSettingsMap.gauss_split = true;
-        optimSettingsMap.num_iter = config.num_iter_keyframe_optim;
-        optimSettingsMap.max_step = 0.01;
+        optimSettingsMap.gauss_split = true;                            // 是否高斯分裂
+        optimSettingsMap.num_iter = config.num_iter_keyframe_optim;     // 迭代次数
+        optimSettingsMap.max_step = 0.01;                               // 最大步长
         // optimSettingsMap.step_length_optim = 0.05;
-        optimSettingsMap.decay_rate = config.decay_rate_key;
+        optimSettingsMap.decay_rate = config.decay_rate_key;            // 衰减率
 
         optimSettingsMap.select_best_set = config.select_best_set_key;
         optimSettingsMap.min_num_gaussians = config.min_num_points_gauss_key;
@@ -103,9 +103,11 @@ public:
         optimSettingsMap.grid_size_1_factor = 2.0f;
     }
 
+    // 把 IMU 数据加入缓存 imuBuffer
     void processImuMeasurements(Eigen::Vector3d &AccMeas, Eigen::Vector3d &AngVelMeas, double &stamp)
     {
         // init t0
+        // 检查系统时间是否初始化，如果没有初始化，放弃掉这一帧 IMU
         if (timeInitialized == false)
         {
             std::cerr << "Discard imu data because the system is only initialized with the first point cloud\n";
@@ -177,7 +179,7 @@ public:
         Ref<Vector3d> lastKeyframePos = KeyframeMap.keyframePoses.globalPoses.Translations.col(KeyframeMap.keyframeDataBuffer.getNumElements() - 1);
         Ref<Vector3d> currPos = currTraj->controlPoses.globalPoses.Translations.col(0);
 
-        // 判断是否添加新关键帧
+        // 根据重叠比例和距离判断是否添加新关键帧
         if (overlapRatio < config.min_overlap_new_keyframe || (currPos - lastKeyframePos).norm() > config.dist_new_keyframe)
         {
             if (KeyframeMap.keyframeDataBuffer.isFull() == true)
@@ -211,6 +213,7 @@ public:
         recievedImuData = false;
     }
 
+    // 保存 pose 到文件
     void savePoses(string result_dir)
     {
         Output.saveDensePoses(KeyframeMap.keyframePoses, result_dir);
@@ -222,33 +225,37 @@ private:
         if (fromId < 0 || allKeyframes.keyframeDataBuffer.getMaxNumElems() == 1 || allKeyframes.keyframeDataBuffer.getMaxNumElems() < 3)
             return;
 
+        // 根据给定索引 fromId 到 allKeyframes.keyframeDataBuffer.getNumElements() - 1，创建子地图
         std::shared_ptr<MapManagement> currSubmap = allKeyframes.getSubmap(fromId, allKeyframes.keyframeDataBuffer.getNumElements() - 1);
 
-        // copy settings
+        // copy settings 对子地图进行一些设置
         currSubmap->useGravityErrorTerms = config.use_gravity_term_in_keyframe_opt && config.use_imu;
         currSubmap->balancingFactorGrav = config.balancing_factor_gravity;
 
         currSubmap->useOdometryErrorTerms = config.use_odometry_term_in_keyframe_opt;
         currSubmap->balancingFactorOdom = config.balancing_factor_odometry;
 
-        // keyframe optimization
+        // keyframe optimization 对子地图关键帧进行优化
         std::cout << "Grid size keyframe optimization: " << currSubmap->minGridSize << std::endl;
         keyframeMapOptimizer.optimizeSet(*currSubmap, optimSettingsMap);
 
-        // update poses
+        // update poses 更新位姿，把子地图中的位姿放入 allKeyframes
         allKeyframes.updatePosesFromSubmap(fromId, allKeyframes.keyframeDataBuffer.getNumElements() - 1, *currSubmap);
 
-        // update curr trajectory
+        // update curr trajectory   更新当前轨迹
         currTraj->controlPoses.relativePoses.Translations.col(0) = allKeyframes.keyframePoses.globalPoses.Translations.col(allKeyframes.keyframeDataBuffer.getNumElements() - 1);
         currTraj->controlPoses.relativePoses.Orientations.col(0) = allKeyframes.keyframePoses.globalPoses.Orientations.col(allKeyframes.keyframeDataBuffer.getNumElements() - 1);
 
+        // 优化后，相对位姿转换为全局位姿
         currTraj->controlPoses.relative2global();
     }
 
     void updateTimeManagement(PointCloudPlus::Ptr inputPc)
     {
+        // 如果时间还未初始化
         if (timeInitialized == false)
         {
+            // 遍历点云，找到最小的时间戳
             double minStamp = std::numeric_limits<double>::max();
             for (auto point : inputPc->points)
                 minStamp = std::min(minStamp, point.stamp);
@@ -263,20 +270,28 @@ private:
         chrono::time_point<std::chrono::system_clock> currSystemTime = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds_system = currSystemTime - t0_system;
 
+        // 计算输入点云中第一个点的时间戳与初始时间戳t0的差值elapsedSecDataTime，表示数据时间的流逝
         double elapsedSecDataTime = inputPc->points[0].stamp - t0;
 
+        // 如果点云缓冲区的更新次数是 10 的倍数，输出处理的实时时间elapsedSecDataTime以及数据时间与系统时间的比率。这个比率可以用来评估数据处理的速度与实际时间的关系
         if (pcBuffer->getNumUpdates() % 10 == 0)
             std::cerr << "Processed real-time: " << elapsedSecDataTime << " [s] / real-time ratio: " << elapsedSecDataTime / elapsed_seconds_system.count() << "\n";
     }
 
+    // 将关键帧中符合条件的点加入静态点，并找出重叠度最高的关键帧ID
+    // 计算关键帧与当前轨迹位置的距离。
+    // 如果距离在阈值内，则处理关键帧的点云数据。
+    // 对于每个点，使用Kd树找到最近的邻居，并检查它是否在允许的距离内且对当前轨迹可见。
+    // 如果是，则将点添加到静态点集合中，并更新重叠度。
+    // 最后，函数对静态点进行下采样，计算重叠度，并将活动点云作为静态点添加到轨迹中。
     void addStaticPoints(ContinuousTrajectory &trajIn, int &keyframeId, float &overlapToStatic, int &minRelatedKeyId)
     {
-
+        // 当前轨迹的位置
         Ref<Vector3d> currPos = trajIn.controlPoses.globalPoses.Translations.col(0);
         Vector3f currPosf = currPos.cast<float>();
 
         keyframeId = 0;
-        overlapToStatic = 0.0f;
+        overlapToStatic = 0.0f; // 当前轨迹与静态点的重叠率
         int currOverlap;
         int maxOverlapKey = 0;
         minRelatedKeyId = -1;
@@ -287,16 +302,17 @@ private:
         tmpPt.id = -1;
         tmpPt.stamp = -1000.0;
 
-        // reset static points
+        // reset static points  重置静态点
         staticPoints->resize(0);
 
         KdTreeFLANN<PointStampId> kdtree;
 
         // Set the input point cloud to the kdtree
+        // 使用当前轨迹的全局点云数据初始化 kdtree
         kdtree.setInputCloud(trajIn.globalPoints.makeShared());
 
-        vector<int> pointIdxNKNSearch;
-        vector<float> pointNKNSquaredDistance;
+        vector<int> pointIdxNKNSearch;          // 最近点的索引
+        vector<float> pointNKNSquaredDistance;  // 最近点的距离
 
         float sqrdMaxDist = std::pow(1.0f * trajIn.minGridSize, 2);
 
@@ -306,17 +322,18 @@ private:
             {
                 continue;
             }
-
+            // 当前轨迹与关键帧轨迹的距离
             double distToKeyframe = (currPos - KeyframeMap.keyframePoses.globalPoses.Translations.col(k)).norm();
 
             if (distToKeyframe < config.dist_static_points_keyframe)
             {
                 KeyframeMap.getGlobalKeyframeCloud(k, tmpPtr);
 
-                // reset overlap
+                // reset overlap 重置重叠率
                 currOverlap = 0;
 
                 // for (auto point : tmpPtr->points)
+                // 遍历关键帧点云，搜索最近邻更新静态点
                 for (int j = 0; j < tmpPtr->points.size(); ++j)
                 {
                     auto &point = tmpPtr->points[j];
@@ -353,15 +370,17 @@ private:
             }
         }
 
-        // downsampling
+        // downsampling 静态点下采样到 KeyframeMap.activePoints
         if (staticPoints->size() > 0)
             randomGridDownsampling(staticPoints, KeyframeMap.activePoints, trajIn.minGridSize / 2.0f);
 
         if (pcBuffer->getNumUpdates() % 10 == 0)
             std::cerr << "num pts active: " << KeyframeMap.activePoints->size() << " Mapsize: " << KeyframeMap.keyframeDataBuffer.getNumUpdates() << " / max: " << KeyframeMap.keyframeDataBuffer.getMaxNumElems() << "\n";
 
+        // 计算静态点与轨迹全局点云之间的重叠度
         overlapToStatic = getOverlap(*KeyframeMap.activePoints, trajIn.globalPoints, trajIn.minGridSize);
 
+        // 下采样后的静态点加入当前轨迹
         if (KeyframeMap.activePoints->size() > 0)
             trajIn.addStaticPoints(*KeyframeMap.activePoints);
     }
