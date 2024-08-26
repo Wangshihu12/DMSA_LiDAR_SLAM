@@ -21,6 +21,7 @@ using namespace std;
 class PointCloudBuffer : public RingBuffer<PointCloudPlus>
 {
 public:
+    // 返回点云数据中最大和最小的时间戳
     void getMinMaxPointStamps(double &minStamp, double &maxStamp)
     {
         minStamp = std::numeric_limits<double>::max();
@@ -38,6 +39,7 @@ public:
         }
     }
 
+    // 计算储存在环形缓冲区的点的总数，每个元素是一帧点云
     int getNumPoints()
     {
         int numPts = 0;

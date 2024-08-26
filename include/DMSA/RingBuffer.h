@@ -20,14 +20,15 @@ template <typename T>
 class RingBuffer
 {
 protected:
-    std::vector<T> data;
+    std::vector<T> data;        // 储存的动态数组
     int nextIndex = 0;
-    int maxElements = 0;
-    int numUpdates = 0;
+    int maxElements = 0;        // 最大元素数量
+    int numUpdates = 0;         // 添加的元素总数
     bool isInitialized = false;
     bool isFilled = false;
 
 public:
+    // 根据索引返回元素
     T &at(int chronologicalIndex)
     {
         if (isFilled)

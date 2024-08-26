@@ -30,20 +30,20 @@ public:
     ImuBuffer imuBuffer;
     std::shared_ptr<PointCloudBuffer> pcBuffer;
 
-    bool oneCloudBufferInit = false;
-    PointCloudPlus::Ptr bufferedCloud;
+    bool oneCloudBufferInit = false;        // 点云缓冲区是否初始化
+    PointCloudPlus::Ptr bufferedCloud;      // 缓冲的每一帧点云
 
     // state
-    bool submapIsInitialized = false;
-    bool recievedImuData = false;
+    bool submapIsInitialized = false;   // 子地图是否初始化
+    bool recievedImuData = false;       // 是否接收 IMU 数据
     bool timeInitialized = false;
     double t0 = -1.0;
     chrono::time_point<std::chrono::system_clock> t0_system;
 
-    std::shared_ptr<ContinuousTrajectory> currTraj;
+    std::shared_ptr<ContinuousTrajectory> currTraj;     // 当前轨迹
     std::shared_ptr<ContinuousTrajectory> oldTraj;
 
-    MapManagement KeyframeMap;
+    MapManagement KeyframeMap;      // 地图管理
 
     Config config;
     DmsaOptimSettings optimSettingsSlidingWindow;
@@ -120,9 +120,10 @@ public:
 
     void processPointCloud(PointCloudPlus::Ptr inputPc)
     {
-
+        // 更新时间管理信息
         updateTimeManagement(inputPc);
 
+        // 初始化缓冲区，第一次调用 点云赋值给 bufferedCloud
         if (oneCloudBufferInit == false)
         {
             bufferedCloud = PointCloudPlus::Ptr(inputPc);
@@ -132,16 +133,16 @@ public:
             return;
         }
 
+        // 交换缓冲区
         PointCloudPlus::Ptr pcToProcess(bufferedCloud);
-
         bufferedCloud = PointCloudPlus::Ptr(inputPc);
 
-        // PREPROCESSING
+        // PREPROCESSING 预处理
         PointCloudPlus::Ptr filteredPc(new PointCloudPlus);
 
         preProcess(pcToProcess, filteredPc);
 
-        // UPDATE RINGBUFFER
+        // UPDATE RINGBUFFER    更新环形缓冲区
         pcBuffer->addElem(*filteredPc);
 
         // stop here if the buffer is not yet full
@@ -151,7 +152,7 @@ public:
             return;
         }
 
-        // SUBMAP OPTIMIZATION
+        // SUBMAP OPTIMIZATION 准备轨迹优化
         prepareTrajectoryForOptimization();
 
         // INIT MAP
@@ -165,16 +166,18 @@ public:
         int minKeyframeId;
 
         // find relevant static points for sliding window optim, calc overlap, find minimum related keyframe
+        // 找到与滑动窗口优化相关的静态点，计算重叠部分，并找到相关的最小关键帧ID
         addStaticPoints(*currTraj, maxOverlapKeyId, overlapRatio, minKeyframeId);
 
-        // optimize submap
+        // optimize submap 滑动窗口优化子地图
         slidingWindowOptimizer.optimizeSet(*currTraj, optimSettingsSlidingWindow);
-
+        // 移除静态点
         currTraj->removeStaticPoints();
 
         Ref<Vector3d> lastKeyframePos = KeyframeMap.keyframePoses.globalPoses.Translations.col(KeyframeMap.keyframeDataBuffer.getNumElements() - 1);
         Ref<Vector3d> currPos = currTraj->controlPoses.globalPoses.Translations.col(0);
 
+        // 判断是否添加新关键帧
         if (overlapRatio < config.min_overlap_new_keyframe || (currPos - lastKeyframePos).norm() > config.dist_new_keyframe)
         {
             if (KeyframeMap.keyframeDataBuffer.isFull() == true)

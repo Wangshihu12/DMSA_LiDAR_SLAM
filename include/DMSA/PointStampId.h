@@ -33,9 +33,9 @@
 struct PointStampId
 {
     PCL_ADD_POINT4D;
-    double stamp;
+    double stamp;   // 时间戳
     int id;
-    int isStatic;
+    int isStatic;   // 是否静态点
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 

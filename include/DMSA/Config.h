@@ -16,7 +16,7 @@ using namespace Eigen;
 
 struct Config
 {
-    int n_clouds = 5;
+    int n_clouds = 5;   // 环形缓冲区最大点云数
     int num_control_poses = 6;
     std::string sensor = "hesai";
     bool optimize_sliding_window_keyframes = true;

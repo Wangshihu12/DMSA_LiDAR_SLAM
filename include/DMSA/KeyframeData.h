@@ -24,7 +24,7 @@ public:
     float gridSize;
 
     Vector3d measuredGravity;
-    bool gravityPlausible = false;
+    bool gravityPlausible = false;      // 重力是否合理
 
     Vector3d relativeTransl;
     Vector3d relativeOrient;

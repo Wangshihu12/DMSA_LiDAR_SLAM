@@ -48,6 +48,7 @@ inline Matrix3d skew(Vector3d vec)
     return skewSym;
 }
 
+// 角度转换为旋转矩阵
 inline Matrix3d axang2rotm(Vector3d axang)
 {
     if (axang.norm() < EPSILON_ROT)
