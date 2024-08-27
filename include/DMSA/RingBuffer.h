@@ -65,15 +65,17 @@ public:
         isFilled = false;
     }
 
+    // 复制元素到 data
     void addElem(T &elem)
     {
+        // 检查环形缓冲区是否初始化
         if (isInitialized == false)
         {
             std::cerr << "Ring buffer is used without initialization. Initialize with a maximum of 10 elements . . . \n";
             init(10);
         }
 
-        // copy
+        // copy 将传入元素复制到 data
         data[nextIndex] = elem;
 
         // update index
