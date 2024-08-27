@@ -24,74 +24,80 @@ using namespace std;
 class ContinuousTrajectory : public OptimizablePointSet<PointStampId>
 {
 public:
-    StampedConsecutivePoses controlPoses;
+    StampedConsecutivePoses controlPoses;   // 有时间戳的连续控制姿态
 
-    Poses denseGlobalPoses;
+    Poses denseGlobalPoses;     // 全局点的姿态
 
-    vector<Matrix4f> denseTformsLocal2Global;
+    vector<Matrix4f> denseTformsLocal2Global;   // local 2 global 转换矩阵
 
-    VectorXd trajTime;
-    Vector3d gravity;
+    VectorXd trajTime;  // 轨迹时间点
+    Vector3d gravity;   // 重力向量
 
     // preintegrated imu measurements
-    vector<Matrix3d> preintImuRots;
-    vector<Vector3d> preintRelPositions;
-    vector<Vector3d> preintRelVelocity;
+    vector<Matrix3d> preintImuRots;         // 预积分 IMU 的旋转矩阵
+    vector<Vector3d> preintRelPositions;    // 预积分相对位置
+    vector<Vector3d> preintRelVelocity;     // 预积分相对速度
 
-    Vector3d preintPosComplHor;
+    Vector3d preintPosComplHor;     // 水平方向的预积分位置补偿
 
-    vector<Matrix<double, 9, 9>> CovPVRot_inv;
+    vector<Matrix<double, 9, 9>> CovPVRot_inv;  // 位置、速度和旋转的逆协方差矩阵
 
-    double t0;
-    double horizon;
+    double t0;      // 轨迹的起始时间
+    double horizon; // 轨迹的预测时间范围
 
-    double dt_res = 0.0001;
+    double dt_res = 0.0001;     // 时间分辨率
 
-    bool validImuData = false;
+    bool validImuData = false;  // IMU 数据是否有效
 
-    double balancingImu = 0.001f;
-    bool useImuErrorTerms;
+    double balancingImu = 0.001f;   // 平衡IMU数据的影响
+    bool useImuErrorTerms;          // 是否使用IMU误差项
 
-    int numParams;
-    int n_total;
+    int numParams;  // 参数的数量
+    int n_total;    // 参数的总数
 
     // origin is saved here in case of centralization
-    Vector3d origin;
+    Vector3d origin;    // 中心化后的原点位置
 
     // imu measurement containers
-    Matrix3Xd accMeas;
-    Matrix3Xd angVelMeas;
+    Matrix3Xd accMeas;      // 加速度测量数据
+    Matrix3Xd angVelMeas;   // 角速度测量数据
 
-    VectorXd imuFactorError;
-    VectorXi paramIndices;
+    VectorXd imuFactorError;    // IMU 误差项
+    VectorXi paramIndices;      // 参数的索引
 
     // registered point cloud buffer
-    std::shared_ptr<PointCloudBuffer> regPcBuffer;
+    std::shared_ptr<PointCloudBuffer> regPcBuffer;  // 点云环形缓冲区
 
-    vector<vector<int>> tformIdPerPoint;
+    vector<vector<int>> tformIdPerPoint;    // 存储了每个点对应的变换ID列表
 
     ContinuousTrajectory() {}
 
+    // 将轨迹的中心化，即将轨迹的起始点移动到原点
     void centralize()
     {
+        // 保存原始起点
         origin = controlPoses.relativePoses.Translations.col(0);
-
+        // 将轨迹起点设置为 0
         controlPoses.relativePoses.Translations.col(0).setZero();
-
+        // 根据新的相对姿态计算全局姿态
         controlPoses.relative2global();
 
+        // 中心化静态点
         for (auto &point : globalPoints)
         {
             if (point.isStatic > 0)
                 point.getVector3fMap() = point.getVector3fMap() - origin.cast<float>();
         }
     }
+
+    // 去中心化，将中心化后的轨迹恢复到原来的位置
     void decentralize()
     {
         controlPoses.global2relative();
         controlPoses.relativePoses.Translations.col(0) = origin;
         controlPoses.relative2global();
 
+        // 去中心化静态点
         for (auto &point : globalPoints)
         {
             if (point.isStatic > 0)
@@ -99,11 +105,13 @@ public:
         }
     }
 
+    // 返回 IMU 误差因子
     Eigen::VectorXd &getAdditionalErrorTerms()
     {
         return imuFactorError;
     }
 
+    // 更新 IMU 误差因子
     int updateAdditionalErrors()
     {
         if (useImuErrorTerms)
@@ -116,6 +124,7 @@ public:
             return 0;
     }
 
+    // 将输入参数填充到控制点姿态中
     void getPoseParameters(VectorXd &params)
     {
         controlPoses.relativePoses.getParamsAsVector(params);
@@ -126,14 +135,16 @@ public:
         controlPoses.relativePoses.setParamsFromVector(params);
     }
 
+    // 更新全局点云，将局部点云转换到全局坐标系
     void updateGlobalPoints()
     {
         // update dense transforms to global frame
+        // 更新全局变换矩阵
         updateTrajDenseTforms();
 
         // transform points to global cloud
         int currId = 0;
-
+        // 遍历缓冲区的所有点云，将每个点从局部坐标系转换到全局坐标系
         for (int pcId = 0; pcId < regPcBuffer->getNumElements(); ++pcId)
         {
             PointCloudPlus &currCloud = regPcBuffer->at(pcId);
@@ -155,6 +166,7 @@ public:
         }
     }
 
+    // 将一个静态点云添加到全局点云中，并标记这些点为静态
     void addStaticPoints(const pcl::PointCloud<PointStampId> &pcStatic)
     {
         int currSz = globalPoints.points.size();
@@ -171,6 +183,7 @@ public:
         }
     }
 
+    // 从全局点云中移除所有标记为静态的点
     void removeStaticPoints()
     {
         if (globalPoints.points.size() == 0)
@@ -186,18 +199,22 @@ public:
         }
     }
 
+    // 更新从局部到全局的密集变换矩阵
     void updateTrajDenseTforms()
     {
+        // 将局部姿态转换到全局姿态
         controlPoses.relative2global();
 
         // interpolate orientations with slerp
         for (int k = 0; k < n_total; ++k)
         {
             // rotational interpolation
+            // 使用球面线性插值（slerp）来估计当前时间点的旋转
             getInterpRotation(controlPoses.globalPoses, controlPoses.stamps, trajTime(k), denseGlobalPoses.Orientations.col(k));
         }
 
         // interpolation of translation
+        // 对每个轴，使用三次插值来估计平移
         for (int k = 0; k < 3; ++k)
         {
 
@@ -218,6 +235,7 @@ public:
         }
 
         // update dense transforms
+        // 更新变换矩阵
         for (int k = 0; k < n_total; ++k)
         {
             denseTformsLocal2Global[k].block(0, 0, 3, 3) = axang2rotm(denseGlobalPoses.Orientations.col(k)).cast<float>();
@@ -225,6 +243,7 @@ public:
         }
     }
 
+    // 将一个点云缓冲区注册到全局点云中，并计算每个点对应的变换索引
     void registerPcBuffer(std::shared_ptr<PointCloudBuffer> &bufferPtrIn)
     {
         regPcBuffer = bufferPtrIn;
@@ -232,6 +251,7 @@ public:
         globalPoints.resize(regPcBuffer->getNumPoints());
 
         // save minimum grid size for optimization
+        // 计算最小网格尺寸
         this->minGridSize = std::numeric_limits<float>::max();
 
         for (int k = 0; k < regPcBuffer->getNumElements(); ++k)
@@ -250,16 +270,20 @@ public:
 
             for (int k = 0; k < currCloud.size(); ++k)
             {
+                // 查找时间戳中与当前点时间戳最接近的值的指针
                 auto pointerToVal = std::lower_bound(this->trajTime.data(), this->trajTime.data() + this->trajTime.size(), currCloud.points[k].stamp - this->t0);
+                // 计算变换索引
                 tformIdPerPoint[pcId][k] = std::min((int)std::distance(this->trajTime.data(), pointerToVal), static_cast<int>(this->n_total - 1));
 
                 // copy point to save additional information
+                // 复制当前点到全局点云中
                 globalPoints.points[globalId] = currCloud.points[k];
                 ++globalId;
             }
         }
     }
 
+    // 初始化重力方向，用于校正IMU数据或姿态估计
     void initGravityDir()
     {
         // Vector3d measuredGravity = accMeas.rowwise().mean();
@@ -298,18 +322,19 @@ public:
         cout << "Estimated gravity direction: " << normedAxisAngle.transpose() << endl;
     }
 
+    // 初始化轨迹数据结构，包括时间间隔、姿态估计、IMU数据和参数估计等
     void initTraj(double t_min, double t_max, int numControlPoses, bool useImu, double dtResIn)
     {
 
         // init
-        dt_res = dtResIn;
-        useImuErrorTerms = useImu;
+        dt_res = dtResIn;   // 时间分辨率
+        useImuErrorTerms = useImu;  // 是否使用 IMU 误差项
 
-        t0 = t_min;
-        horizon = t_max - t_min + dt_res;
-        n_total = round(horizon / dt_res) + 1;
+        t0 = t_min;     // 轨迹的起始时间
+        horizon = t_max - t_min + dt_res;   // 轨迹的预测范围
+        n_total = round(horizon / dt_res) + 1;  // 计算总的时间点数
 
-        // init data structures
+        // init data structures 初始化变换矩阵结构
         denseTformsLocal2Global.resize(n_total);
 
         for (int k = 0; k < n_total; ++k)
@@ -318,17 +343,19 @@ public:
         accMeas.conservativeResize(3, n_total);
         angVelMeas.conservativeResize(3, n_total);
 
+        // 初始化全局姿态矩阵
         denseGlobalPoses.resize(n_total);
 
+        // 初始化轨迹时间戳
         trajTime = VectorXd::LinSpaced(n_total, 0.0, horizon);
 
         // calc total number of parameters
-        numParams = numControlPoses;
+        numParams = numControlPoses;    // 计算总的参数数量
 
-        // set number of parameters
+        // set number of parameters 初始化控制姿态
         controlPoses = StampedConsecutivePoses(numParams);
 
-        // init stamps of sparse poses
+        // init stamps of sparse poses 初始化控制姿态的时间戳
         controlPoses.stamps = VectorXd::LinSpaced(numParams, 0.0, horizon);
 
         // init param indices
@@ -345,15 +372,16 @@ public:
         gravity << 0.0, 0.0, -9.805;
     }
 
+    // 将一个IMU缓冲区中的测量数据转移到当前的轨迹时间戳上，把测量数据存到 accMeas angVelMeas
     void transferImuMeasurements(ImuBuffer &imuBuffer)
     {
 
         double timediff;
-
+        // 遍历轨迹中每个时间点
         for (int k = 0; k < n_total; ++k)
         {
             double currGlobalTime = t0 + trajTime(k);
-
+            // 根据当前时间，从 imuBuffer 中找到最近的测量数据，并返回时间差
             timediff = imuBuffer.getClosestMeasurement(currGlobalTime, accMeas.col(k), angVelMeas.col(k));
 
             if (abs(timediff) > 0.1)
@@ -364,10 +392,11 @@ public:
         }
     }
 
+    // 更新初始估计，包括重力方向、姿态估计、位置估计等
     void updateInitialGuess(bool &isInitialized, ContinuousTrajectory &oldTraj, bool useImu)
     {
         int lastKnownParamId = 0;
-
+        // 初始化重力方向
         if (!isInitialized)
         {
             // initialize gravity dir
@@ -379,9 +408,10 @@ public:
             return;
         }
 
-        // update global parameter set
+        // update global parameter set 相对姿态转换为全局姿态
         oldTraj.controlPoses.relative2global();
 
+        // 遍历 controlPoses 中的时间戳，找到最后一个时间戳小于 oldTraj 预测范围的时间戳对应的参数ID
         for (int k = 0; k < controlPoses.stamps.size(); ++k)
         {
             if (t0 + controlPoses.stamps(k) < oldTraj.t0 + oldTraj.horizon)
@@ -389,6 +419,7 @@ public:
         }
 
         // get orientation for control poses from old trajectory by interpolation
+        // 通过插值从 oldTraj 获取控制姿态的方向
         for (int k = 0; k <= lastKnownParamId; ++k)
         {
             getInterpRotation(oldTraj.controlPoses.globalPoses, oldTraj.controlPoses.stamps, controlPoses.stamps(k) + t0 - oldTraj.t0, controlPoses.globalPoses.Orientations.col(k));
@@ -396,7 +427,7 @@ public:
 
         // get position of control poses from old trajectory by cubic interpolation
         Vector3d v0;
-
+        // 通过三次插值获取控制姿态的位置
         for (int k = 0; k < 3; ++k)
         {
 
@@ -419,7 +450,7 @@ public:
             v0(k) = s.prime(controlPoses.stamps(lastKnownParamId) + t0 - oldTraj.t0);
         }
 
-        // update relative parameter set
+        // update relative parameter set 全局姿态转换为相对姿态
         controlPoses.global2relative();
 
         if (useImu)
@@ -468,13 +499,14 @@ public:
         }
     }
 
+    // 对imu进行积分
     void getImuIntegratedParams(double t0, Vector3d axang0, Vector3d pos0, Vector3d v0,
                                 double tend, Ref<Vector3d> axang_end, Ref<Vector3d> pos_end, Ref<Vector3d> v_end)
     {
 
         // integrate position and orientation within t0 and tend
 
-        // get closest imu measurement index
+        // get closest imu measurement index 根据当前时间获得最近时间的索引
         auto pointerToVal = lower_bound(trajTime.data(), trajTime.data() + trajTime.size() - 1, t0);
         auto index = distance(trajTime.data(), pointerToVal);
 
@@ -484,7 +516,7 @@ public:
         if (abs(t0 - prev) < abs(t0 - next))
             index = index - 1;
 
-        // init variables
+        // init variables   初始化
         Matrix3d R_imu2w = axang2rotm(axang0);
         Vector3d vel_w, pos_w;
 

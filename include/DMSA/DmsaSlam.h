@@ -164,7 +164,7 @@ public:
             return;
         }
 
-        // add static points
+        // add static points 添加静态点最小关键帧 ID
         int minKeyframeId;
 
         // find relevant static points for sliding window optim, calc overlap, find minimum related keyframe

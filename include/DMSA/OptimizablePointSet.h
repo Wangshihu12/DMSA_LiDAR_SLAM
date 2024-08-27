@@ -15,13 +15,14 @@
 
 using namespace pcl;
 
+// 优化一组点集
 template <typename PointT>
 class OptimizablePointSet
 {
 public:
-    PointCloud<PointT> globalPoints;
+    PointCloud<PointT> globalPoints;    // 全局点
 
-    float minGridSize = 0.3;
+    float minGridSize = 0.3;    // 最小网格尺寸
 
     virtual Eigen::VectorXd &getAdditionalErrorTerms()
     {
@@ -29,8 +30,10 @@ public:
         return placeholder;
     }
 
+    // 更新全局点
     virtual void updateGlobalPoints() { std::cerr << "virtual void updateGlobalPoints() is undefined"; }
 
+    // 更新误差项
     virtual int updateAdditionalErrors()
     {   // return number of error values
         return 0;
