@@ -37,8 +37,8 @@ public:
     bool submapIsInitialized = false;   // 子地图是否初始化
     bool recievedImuData = false;       // 是否接收到过 IMU 数据
     bool timeInitialized = false;
-    double t0 = -1.0;
-    chrono::time_point<std::chrono::system_clock> t0_system;
+    double t0 = -1.0;                   // 点云中最小的时间戳
+    chrono::time_point<std::chrono::system_clock> t0_system;    // 找到最小时间戳时的系统时间
 
     std::shared_ptr<ContinuousTrajectory> currTraj;     // 当前轨迹
     std::shared_ptr<ContinuousTrajectory> oldTraj;
@@ -148,13 +148,14 @@ public:
         pcBuffer->addElem(*filteredPc);
 
         // stop here if the buffer is not yet full
+        // 检查点云环形缓冲区满没满，没满直接 return
         if (pcBuffer->isFull() == false)
         {
             std::cerr << "Point cloud ring buffer is not full yet " << pcBuffer->getNumUpdates() << " / " << pcBuffer->getMaxNumElems() << "\n";
             return;
         }
 
-        // SUBMAP OPTIMIZATION 准备轨迹优化
+        // SUBMAP OPTIMIZATION 准备轨迹优化，更新当前轨迹
         prepareTrajectoryForOptimization();
 
         // INIT MAP
@@ -441,18 +442,22 @@ private:
         return static_cast<float>(nCorresp) / static_cast<float>(pc2.size());
     }
 
+    // 准备轨迹优化
+    // 把旧轨迹交换到当前轨迹
+    // 将 imu 数据转换到当前轨迹，并更新轨迹中的预积分因子
+    // 把点云缓冲区注册到当前轨迹
     void prepareTrajectoryForOptimization()
     {
-        // save old Traj
+        // save old Traj 将旧轨迹交换到当前轨迹
         currTraj.swap(oldTraj);
 
         double minStamp, maxStamp;
-
+        // 获取最大最小时间戳
         pcBuffer->getMinMaxPointStamps(minStamp, maxStamp);
 
         // init trajectory
         bool useImuNow = config.use_imu && recievedImuData;
-
+        // 初始化轨迹
         currTraj->initTraj(minStamp, maxStamp, config.num_control_poses, useImuNow, config.dt_res);
 
         // deactivate imu usage for the whole sequence if there are no measurements before initialization
@@ -463,25 +468,29 @@ private:
         }
 
         // add corresponding imu measurements to trajectory
+        // 把 imu 数据转移到当前轨迹中
         if (useImuNow)
             currTraj->transferImuMeasurements(imuBuffer);
 
         // update preintegrated rotations
+        // 更新当前轨迹中的预积分旋转因子
         if (useImuNow)
             currTraj->updatePreintFactors(config.cov_gyr, config.cov_acc);
 
-        // update initial guess
+        // update initial guess 更新初始估计
         currTraj->updateInitialGuess(submapIsInitialized, *oldTraj, useImuNow);
 
-        // register pc buffer
+        // register pc buffer   点云缓冲区注册到当前轨迹
         currTraj->registerPcBuffer(pcBuffer);
 
+        // 更新当前轨迹的全局点
         currTraj->updateGlobalPoints();
 
         currTraj->validImuData = useImuNow;
 
         if (config.use_imu && recievedImuData)
         {
+            // 设置滑动窗口优化的步长和最大步长参数
             optimSettingsSlidingWindow.step_length_optim = config.alpha_sliding_window_imu;
             optimSettingsSlidingWindow.max_step = config.max_step_sliding_window_imu;
 
@@ -495,6 +504,7 @@ private:
         }
     }
 
+    // 初始化地图，将轨迹中点云缓冲区的第一个点云加入到关键帧地图
     void initializeMap(ContinuousTrajectory &trajIn)
     {
         PointCloud<PointNormal>::Ptr keyframeCloud_imu(new PointCloud<PointNormal>());
@@ -503,7 +513,7 @@ private:
 
         KeyframeData data;
         data.ringIds.resize(trajIn.regPcBuffer->at(0).size());
-
+        // 把点云缓冲区中第一个点云信息复制到 keyframeCloud_imu 和 data
         for (int k = 0; k < trajIn.regPcBuffer->at(0).size(); ++k)
         {
             keyframeCloud_imu->points[k].x = trajIn.regPcBuffer->at(0).points[k].x;
@@ -519,8 +529,10 @@ private:
         data.gridSize = trajIn.minGridSize;
 
         if (trajIn.validImuData)
+            // 获取子地图的重力估计值
             trajIn.getSubmapGravityEstimate(data.measuredGravity);
 
+        // 将关键帧添加到地图中
         KeyframeMap.addKeyframe(trajIn.controlPoses.globalPoses.Translations.col(0), trajIn.controlPoses.globalPoses.Orientations.col(0), trajIn.t0, data);
 
         Output.informAboutNewKeyframe();
