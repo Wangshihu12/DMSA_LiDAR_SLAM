@@ -1,4 +1,4 @@
-﻿/* Copyright (C) 2024 David Skuddis - All Rights Reserved
+/* Copyright (C) 2024 David Skuddis - All Rights Reserved
  * You may use, distribute and modify this code under the
  * terms of the MIT license.
  *
@@ -315,7 +315,7 @@ void dmsa_slam_ros::spin()
 void dmsa_slam_ros::callbackImuData(const sensor_msgs::Imu::ConstPtr &msg)
 {
 
-    // save measurements
+    // save measurements 读取 msg 中的加速度与角速度
     Eigen::Vector3d accVec = accUnitScale*Vector3d(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z);
     Eigen::Vector3d angVelVec = Vector3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z);
     double stamp = msg->header.stamp.toSec();
