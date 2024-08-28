@@ -1,4 +1,4 @@
-/* Copyright (C) 2024 David Skuddis - All Rights Reserved
+﻿/* Copyright (C) 2024 David Skuddis - All Rights Reserved
  * You may use, distribute and modify this code under the
  * terms of the MIT license.
  *
@@ -383,10 +383,10 @@ void dmsa_slam_ros::callbackPointCloud(const sensor_msgs::PointCloud2::ConstPtr 
 
     newPC->resize(msg->height * msg->width);
 
-    int arrayPosition;
+    int arrayPosition;  // 当前点在数据中的位置
     uint8_t ring_tmp8;
     uint16_t ring_tmp;
-    uint32_t relStampNano;
+    uint32_t relStampNano;  // 相对时间戳
     double stampMsg = msg->header.stamp.toSec();
 
     // only relevant for unknown sensor type
