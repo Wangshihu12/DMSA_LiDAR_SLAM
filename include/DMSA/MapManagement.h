@@ -26,7 +26,7 @@ public:
 
     RingBuffer<KeyframeData> keyframeDataBuffer;    // 关键帧信息的环形缓冲区
 
-    PointCloud<PointStampId>::Ptr activePoints;
+    PointCloud<PointStampId>::Ptr activePoints;     // 下采样后的静态点
 
     vector<int> keyframeIds;
     vector<int> ringIds;        // 根据全局点的 ID 获取环形缓冲区的 ID

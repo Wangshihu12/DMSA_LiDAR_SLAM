@@ -174,7 +174,7 @@ public:
 
         // optimize submap 滑动窗口优化子地图
         slidingWindowOptimizer.optimizeSet(*currTraj, optimSettingsSlidingWindow);
-        // 移除静态点
+        // 优化后移除静态点
         currTraj->removeStaticPoints();
 
         Ref<Vector3d> lastKeyframePos = KeyframeMap.keyframePoses.globalPoses.Translations.col(KeyframeMap.keyframeDataBuffer.getNumElements() - 1);
@@ -283,7 +283,7 @@ private:
     // 计算关键帧与当前轨迹位置的距离。
     // 如果距离在阈值内，则处理关键帧的点云数据。
     // 对于每个点，使用Kd树找到最近的邻居，并检查它是否在允许的距离内且对当前轨迹可见。
-    // 如果是，则将点添加到静态点集合中，并更新重叠度。
+    // 如果是，则将点添加到静态点集合中，并更新重叠度。静态点就是关键帧中与轨迹比较近的点
     // 最后，函数对静态点进行下采样，计算重叠度，并将活动点云作为静态点添加到轨迹中。
     void addStaticPoints(ContinuousTrajectory &trajIn, int &keyframeId, float &overlapToStatic, int &minRelatedKeyId)
     {
@@ -386,6 +386,7 @@ private:
             trajIn.addStaticPoints(*KeyframeMap.activePoints);
     }
 
+    // 检查点是否在视野内
     bool isVisible(Vector3f &pos, PointNormal &point)
     {
         float res;
@@ -403,6 +404,7 @@ private:
             return false;
     }
 
+    // 计算两个点云间的重叠度
     template <typename PointType1, typename PointType2>
     float getOverlap(PointCloud<PointType1> &pc1, PointCloud<PointType2> &pc2, float maxDistOverlap)
     {
@@ -538,18 +540,20 @@ private:
         Output.informAboutNewKeyframe();
     }
 
+    // 增加关键帧到 KeyframeMap
     void addNewKeyframeToMap(ContinuousTrajectory &trajIn)
     {
         Output.informAboutNewKeyframe();
 
         PointCloud<PointStampId>::Ptr keyframeCloudFiltered(new PointCloud<PointStampId>());
-
+        // 把当前轨迹中的全局点下采样到 keyframeCloudFiltered
         randomGridDownsampling(trajIn.globalPoints.makeShared(), keyframeCloudFiltered, trajIn.minGridSize);
 
         PointCloud<PointNormal>::Ptr keyframeCloud_imu(new PointCloud<PointNormal>());
 
         keyframeCloud_imu->resize(keyframeCloudFiltered->size());
 
+        // 当前轨迹的起始位置和旋转
         Vector3f currWorldPose = trajIn.controlPoses.globalPoses.Translations.col(0).cast<float>();
         Matrix3f currRotInv = axang2rotm(trajIn.controlPoses.globalPoses.Orientations.col(0)).transpose().cast<float>();
 
@@ -559,6 +563,7 @@ private:
 
         for (int k = 0; k < keyframeCloudFiltered->size(); ++k)
         {
+            // 转换到 imu 坐标系下
             keyframeCloud_imu->points[k].getVector3fMap() = currRotInv * (keyframeCloudFiltered->points[k].getVector3fMap() - currWorldPose);
 
             data.ringIds(k) = keyframeCloudFiltered->points[k].id;
@@ -573,9 +578,11 @@ private:
         data.gridSize = trajIn.minGridSize;
 
         if (trajIn.validImuData)
+            // 获取当前轨迹的重力估计
             trajIn.getSubmapGravityEstimate(data.measuredGravity);
 
         // check gravity plausability
+        // 检查重力估计是否合理
         if (std::abs(data.measuredGravity.norm() - KeyframeMap.gravity.norm()) < config.gravity_outlier_thresh)
             data.gravityPlausible = true;
         else
@@ -595,6 +602,7 @@ private:
         KeyframeMap.addKeyframe(trajIn.controlPoses.globalPoses.Translations.col(0), trajIn.controlPoses.globalPoses.Orientations.col(0), trajIn.t0, data);
     }
 
+    // 更新点云中的法线信息
     void updateNormals(PointCloud<PointNormal>::Ptr &cloud, Vector3d origin = Vector3d::Zero())
     {
         NormalEstimationOMP<PointNormal, PointNormal> ne;
@@ -612,6 +620,7 @@ private:
     {
         // adaptive random grid filter
         filteredPc->gridSize = 0.4f;
+        // 下采样到 filteredPc
         randomGridDownsampling(rawPc, filteredPc, 0.4f);
 
         if (filteredPc->size() < config.max_num_points_per_scan)

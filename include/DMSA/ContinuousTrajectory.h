@@ -183,7 +183,7 @@ public:
         }
     }
 
-    // 从全局点云中移除所有标记为静态的点
+    // 从全局点云 globalPoints 中移除所有标记为静态的点
     void removeStaticPoints()
     {
         if (globalPoints.points.size() == 0)
